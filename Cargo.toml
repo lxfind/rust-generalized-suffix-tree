@@ -5,5 +5,6 @@ description = "Implementation of Generalized Suffix Tree using Ukkonen's algorit
 version = "0.1.0"
 authors = ["Xun Li <lxfind@gmail.com>"]
 edition = "2018"
+repository = "https://github.com/lxfind/rust-generalized-suffix-tree"
 
 [dependencies]
