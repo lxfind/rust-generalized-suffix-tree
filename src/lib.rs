@@ -8,20 +8,18 @@ const ROOT: NodeID = 0;
 const SINK: NodeID = 1;
 const INVALID: NodeID = std::usize::MAX;
 
-const INFINITY: i32 = std::i32::MAX;
-
 const TERM_CHAR: CharType = '$' as CharType;
 
-// end needs to be signed because it may be -1.
+/// end is one more char than real end
 #[derive(Debug, Clone)]
 struct MappedSubstring {
     str_id: StrID,
-    start: i32,
-    end: i32,
+    start: usize,
+    end: usize,
 }
 
 impl MappedSubstring {
-    fn new(str_id: StrID, start: i32, end: i32) -> MappedSubstring {
+    fn new(str_id: StrID, start: usize, end: usize) -> MappedSubstring {
         MappedSubstring {
             str_id,
             start,
@@ -29,25 +27,12 @@ impl MappedSubstring {
         }
     }
 
-    fn new_open_end(str_id: StrID, start: i32) -> MappedSubstring {
-        MappedSubstring {
-            str_id,
-            start,
-            end: INFINITY,
-        }
-    }
-
     fn is_empty(&self) -> bool {
-        self.start > self.end
+        self.start == self.end
     }
 
-    fn longer_than(&self, another: &MappedSubstring) -> bool {
-        self.end - self.start > another.end - another.start
-    }
-
-    fn len(&self) -> i32 {
-        assert!(self.end != INFINITY, "Unable to get length for open ended substr");
-        self.end - self.start + 1
+    fn len(&self) -> usize {
+        self.end - self.start
     }
 }
 
@@ -59,9 +44,9 @@ struct Transition {
 }
 
 impl Transition {
-    fn split(&self, split_index: i32, split_node: NodeID) -> (Transition, Transition) {
+    fn split(&self, split_index: usize, split_node: NodeID) -> (Transition, Transition) {
         let mut trans1 = self.clone();
-        trans1.substr.end = split_index - 1;
+        trans1.substr.end = split_index;
         trans1.target_node = split_node;
 
         let mut trans2 = self.clone();
@@ -98,11 +83,11 @@ impl Node {
 struct ReferencePoint {
     node: NodeID,
     str_id: StrID,
-    index: i32,
+    index: usize,
 }
 
 impl ReferencePoint {
-    fn new(node: NodeID, str_id: StrID, index: i32) -> ReferencePoint {
+    fn new(node: NodeID, str_id: StrID, index: usize) -> ReferencePoint {
         ReferencePoint {
             node,
             str_id,
@@ -126,7 +111,7 @@ impl GeneralizedSuffixTree {
         let sink_transition = Transition {
             // The length of the sink_transition is set to 1
             // so that it can consume one charachter during canonize.
-            substr: MappedSubstring::new(0, 0, 0),
+            substr: MappedSubstring::new(0, 0, 1),
             target_node: ROOT,
             share_count: 0,
         };
@@ -166,13 +151,12 @@ impl GeneralizedSuffixTree {
         let mut index = 0;
         let chars = s.as_bytes();
         while index < s.len() {
-            let trans = self.find_transition(node, chars[index as usize]);
+            let trans = self.find_transition(node, chars[index]);
             match trans {
                 None => return false,
                 Some(trans) => {
                     let ref_chars = self.str_storage[trans.substr.str_id].as_bytes();
-                    let trans_end = std::cmp::min(ref_chars.len(), trans.substr.end as usize + 1);
-                    for i in trans.substr.start as usize..trans_end {
+                    for i in trans.substr.start..trans.substr.end {
                         if index == s.len() {
                             return is_substr || ref_chars[i] == TERM_CHAR;
                         }
@@ -193,7 +177,7 @@ impl GeneralizedSuffixTree {
         let mut active_point = ReferencePoint::new(ROOT, str_id, 0);
         for i in 0..self.str_storage[str_id].len() {
             let mut cur_str =
-                MappedSubstring::new(str_id, active_point.index, i as i32);
+                MappedSubstring::new(str_id, active_point.index, i + 1);
             active_point = self.update(active_point.node, &cur_str);
             cur_str.start = active_point.index;
             active_point = self.canonize(active_point.node, &cur_str);
@@ -201,6 +185,8 @@ impl GeneralizedSuffixTree {
     }
 
     fn update(&mut self, node: NodeID, cur_str: &MappedSubstring) -> ReferencePoint {
+        assert!(!cur_str.is_empty());
+
         let mut cur_str = cur_str.clone();
 
         let mut oldr = ROOT;
@@ -208,7 +194,7 @@ impl GeneralizedSuffixTree {
         let mut split_str = cur_str.clone();
         split_str.end -= 1;
 
-        let last_ch = self.get_char(cur_str.str_id, cur_str.end);
+        let last_ch = self.get_char(cur_str.str_id, cur_str.end - 1);
 
         let mut active_point = ReferencePoint::new(node, cur_str.str_id, cur_str.start);
         
@@ -220,7 +206,7 @@ impl GeneralizedSuffixTree {
             self.node_storage[r].transitions.insert(
                 last_ch,
                 Transition {
-                    substr: MappedSubstring::new_open_end(active_point.str_id, cur_str.end),
+                    substr: MappedSubstring::new(active_point.str_id, cur_str.end - 1, self.str_storage[active_point.str_id].len()),
                     target_node: leaf,
                     share_count: 1,
                 },
@@ -289,7 +275,7 @@ impl GeneralizedSuffixTree {
             match trans {
                 None => break,
                 Some(trans) => {
-                    if trans.substr.longer_than(&cur_str) {
+                    if trans.substr.len() > cur_str.len() {
                         break;
                     }
                     let new_start = cur_str.start + trans.substr.len();
@@ -297,7 +283,7 @@ impl GeneralizedSuffixTree {
 
                     if trans.substr.str_id != cur_str.str_id {
                         let new_trans = Transition {
-                            substr: MappedSubstring::new(cur_str.str_id, cur_str.start, new_start - 1),
+                            substr: MappedSubstring::new(cur_str.str_id, cur_str.start, new_start),
                             target_node: trans.target_node,
                             share_count: trans.share_count + 1,
                         };
@@ -327,8 +313,8 @@ impl GeneralizedSuffixTree {
         }
     }
 
-    fn get_char(&self, str_id: StrID, index: i32) -> u8 {
-        self.str_storage[str_id].as_bytes()[index as usize]
+    fn get_char(&self, str_id: StrID, index: usize) -> u8 {
+        self.str_storage[str_id].as_bytes()[index]
     }
 }
 
