@@ -4,17 +4,29 @@ type NodeID = usize;
 type StrID = usize;
 type CharType = u8;
 
+// Special nodes.
 const ROOT: NodeID = 0;
 const SINK: NodeID = 1;
 const INVALID: NodeID = std::usize::MAX;
 
+// Terminator character that will get appended to each input string.
+// It is assumed that the input will never contain this character.
 const TERM_CHAR: CharType = '$' as CharType;
 
-/// end is one more char than real end
+/// This structure represents a slice to a string.
 #[derive(Debug, Clone)]
 struct MappedSubstring {
+    /// Unique ID of the string it's slicing, which can be used to locate the string from the tree's string storage.
     str_id: StrID,
+
+    /// Index of the first character of the slice.
     start: usize,
+
+    /// One past the index of the last character of the slice.
+    /// e.g. when `end` is equal to `start`, this is an empty slice.
+    /// Note that `end` here always represents a meaningful index, unlike in the original algorithm where a slice could potentially be open-ended.
+    /// Such open-endedness allows for online construction of the tree. Here I chose to not support online construction for convenience. It's possible
+    /// to support it by changing `end`'s type to `Option<usize>`.
     end: usize,
 }
 
@@ -36,14 +48,22 @@ impl MappedSubstring {
     }
 }
 
+/// Represents a transition from one node to another.
 #[derive(Debug, Clone)]
 struct Transition {
+    /// The slice of the string this transision represents.
     substr: MappedSubstring,
+
+    /// The ID of the target node after transision.
     target_node: NodeID,
+
+    /// Number of strings sharing this transision, which is needed when computing longest common substring.
     share_count: u32,
 }
 
 impl Transition {
+    /// Split a transition from the middle at string index `split_index` (the character at `split_index` belongs to the second transision) into two transisions.
+    /// These two transisions will be connected through the node with ID of `split_node`. The resulting two transisions are returned.
     fn split(&self, split_index: usize, split_node: NodeID) -> (Transition, Transition) {
         let mut trans1 = self.clone();
         trans1.substr.end = split_index;
@@ -56,6 +76,9 @@ impl Transition {
     }
 }
 
+/// This is a node in the tree. `transitions` represents all the possible transitions from this node to other nodes, stored using a [`HashMap`]. The hashmap is keyed
+/// by the first character of each transition for easy lookup.
+/// `suffix_link` contains the suffix link of this node (a term used in the context of Ukkonen's algorithm).
 #[derive(Debug)]
 struct Node {
     transitions: HashMap<u8, Transition>,
@@ -63,15 +86,11 @@ struct Node {
 }
 
 impl Node {
-    fn new_with_suffix(suffix_link: NodeID) -> Node {
+    fn new() -> Node {
         Node {
             transitions: HashMap::new(),
-            suffix_link: suffix_link,
+            suffix_link: INVALID,
         }
-    }
-
-    fn new() -> Node {
-        Node::new_with_suffix(INVALID)
     }
 
     fn get_suffix(&self) -> NodeID {
@@ -80,9 +99,15 @@ impl Node {
     }
 }
 
+/// A data structure used to store the current state during the Ukkonen's algorithm.
 struct ReferencePoint {
+    /// The active node.
     node: NodeID,
+
+    /// The current string we are processing.
     str_id: StrID,
+
+    /// The active point.
     index: usize,
 }
 
@@ -96,6 +121,19 @@ impl ReferencePoint {
     }
 }
 
+/// This is the generalized suffix tree, implemented using Ukkonen's Algorithm.
+/// One important modification to the algorithm is that this is no longer an online
+/// algorithm, i.e. it only accepts strings fully provided to the suffix tree, instead
+/// of being able to stream processing each string. It is not a fundamental limitation and can be supported.
+/// 
+/// # Examples
+/// 
+/// ```
+/// let tree = GeneralizedSuffixTree::new();
+/// tree.add_string(String::from("abcdabce"));
+/// tree.add_string(String::from("cdefdefg"));
+/// println!("{}", tree.is_suffix("bce"));
+/// ```
 #[derive(Debug)]
 pub struct GeneralizedSuffixTree {
     sink_transition: Transition,
@@ -105,8 +143,10 @@ pub struct GeneralizedSuffixTree {
 
 impl GeneralizedSuffixTree {
     pub fn new() -> GeneralizedSuffixTree {
-        let root = Node::new_with_suffix(SINK);
-        let sink = Node::new_with_suffix(ROOT);
+        let mut root = Node::new();
+        let mut sink = Node::new();
+        root.suffix_link = SINK;
+        sink.suffix_link = ROOT;
 
         let sink_transition = Transition {
             // The length of the sink_transition is set to 1
@@ -124,6 +164,7 @@ impl GeneralizedSuffixTree {
         }
     }
 
+    /// Add a new string to the generalized suffix tree.
     pub fn add_string(&mut self, mut s: String) {
         // Augment string with a terminator character.
         assert!(
@@ -138,10 +179,13 @@ impl GeneralizedSuffixTree {
         self.process_suffixes(self.str_storage.len() - 1);
     }
 
+    /// Checks whether a given string `s` is a suffix in the suffix tree.
     pub fn is_suffix(&self, s: &str) -> bool {
         self.is_suffix_or_substr(s, false)
     }
 
+    /// Checks whether a given string `s` is a substring of any of the strings
+    /// in the suffix tree.
     pub fn is_substr(&self, s: &str) -> bool {
         self.is_suffix_or_substr(s, true)
     }
