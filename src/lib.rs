@@ -181,7 +181,11 @@ impl GeneralizedSuffixTree {
     }
 
     /// Find the longest common substring among all strings in the suffix.
-    pub fn longest_common_substring(&self) -> String {
+    /// This function can be used when you already have a suffix tree built,
+    /// and would need to know the longest commmon substring.
+    /// It can be trivially extended to support longest common substring among
+    /// `K` strings.
+    pub fn longest_common_substring_all(&self) -> String {
         let mut cur_str: Vec<MappedSubstring> = vec![];
         let mut cur_len = 0;
 
@@ -239,6 +243,86 @@ impl GeneralizedSuffixTree {
             *longest_len = *cur_len;
             *longest_str = (*cur_str).clone();
         }
+    }
+
+    /// Find the longest common substring between string `s` and the current suffix.
+    /// This function allows us compute this without adding `s` to the suffix.
+    pub fn longest_common_substring_with<'a>(&self, s: &'a String) -> &'a str {
+        let mut longest_start: IndexType = 0;
+        let mut longest_len: IndexType = 0;
+        let mut cur_start: IndexType = 0;
+        let mut cur_len: IndexType = 0;
+        let mut node: NodeID = ROOT;
+
+        let chars = s.as_bytes();
+        let mut index = 0;
+        let mut active_length = 0;
+        while index < chars.len() {
+            let trans = self.get_node(node).transitions.get(&chars[index]);
+            match trans {
+                None => {}
+                Some(trans) => {
+                    while index != chars.len()
+                        && active_length < trans.substr.len()
+                        && self.get_char(trans.substr.str_id, active_length + trans.substr.start)
+                            == chars[index]
+                    {
+                        index += 1;
+                        active_length += 1;
+                    }
+
+                    let final_len = cur_len + active_length;
+                    if final_len > longest_len {
+                        longest_len = final_len;
+                        longest_start = cur_start;
+                    }
+
+                    if index == chars.len() {
+                        break;
+                    }
+
+                    if active_length == trans.substr.len() {
+                        // We can keep following this route.
+                        node = trans.target_node;
+                        cur_len = final_len;
+                        active_length = 0;
+                        continue;
+                    }
+                }
+            };
+            // There was a mismatch.
+            cur_start += 1;
+            if cur_start > index as IndexType {
+                index += 1;
+                continue;
+            }
+            // We want to follow a different path with one less character from the start.
+            let suffix_link = self.get_node(node).suffix_link;
+            if suffix_link != INVALID && suffix_link != SINK {
+                assert!(cur_len > 0);
+                node = suffix_link;
+                cur_len -= 1;
+            } else {
+                node = ROOT;
+                active_length = active_length + cur_len - 1;
+                cur_len = 0;
+            }
+            while active_length > 0 {
+                let trans = self
+                    .get_node(node)
+                    .transitions
+                    .get(&chars[(cur_start + cur_len) as usize])
+                    .unwrap();
+                if active_length < trans.substr.len() {
+                    break;
+                }
+                active_length -= trans.substr.len();
+                cur_len += trans.substr.len();
+                node = trans.target_node;
+            }
+        }
+
+        &s[longest_start as usize..(longest_start + longest_len) as usize]
     }
 
     /// Checks whether a given string `s` is a suffix in the suffix tree.
@@ -540,12 +624,29 @@ mod tests {
     }
 
     #[test]
-    fn test_longest_common_substring() {
+    fn test_longest_common_substring_all() {
         let mut tree = GeneralizedSuffixTree::new();
         tree.add_string(String::from("VOTEFORTHEGREATALBANIAFORYOU"));
         tree.add_string(String::from("CHOOSETHEGREATALBANIANFUTURE"));
-        assert_eq!(tree.longest_common_substring(), "THEGREATALBANIA");
+        assert_eq!(tree.longest_common_substring_all(), "THEGREATALBANIA");
         tree.add_string(String::from("VOTECHOOSEGREATALBANIATHEFUTURE"));
-        assert_eq!(tree.longest_common_substring(), "EGREATALBANIA");
+        assert_eq!(tree.longest_common_substring_all(), "EGREATALBANIA");
+    }
+
+    #[test]
+    fn test_longest_common_substring_with() {
+        let mut tree = GeneralizedSuffixTree::new();
+        tree.add_string(String::from("VOTEFORTHEGREATALBANIAFORYOU"));
+        let test_str = String::from("CHOOSETHEGREATALBANIANFUTURE");
+        assert_eq!(
+            tree.longest_common_substring_with(&test_str),
+            "THEGREATALBANIA"
+        );
+        tree.add_string(test_str);
+        let test_str = String::from("VOTECHOOSEGREATALBANIATHEFUTURE");
+        assert_eq!(
+            tree.longest_common_substring_with(&test_str),
+            "EGREATALBANIA"
+        );
     }
 }
