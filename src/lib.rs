@@ -1,3 +1,5 @@
+mod disjoint_set;
+
 type NodeID = u32;
 type StrID = u32;
 type IndexType = u32;
@@ -108,44 +110,6 @@ fn decode_char(ch: usize) -> CharType {
     ch as CharType + 'A' as CharType
 }
 
-/// This is a simple implementation of a Disjoint Set, which allows for
-/// efficient operations that involves set union and ancestor finding.
-/// We need this to implement the Tarjan algorithm for computing
-/// least common ancestors, which is needed to compute the longest common
-/// substring.
-struct DisjointSet {
-    ancestors: Vec<NodeID>,
-}
-
-impl DisjointSet {
-    fn new(size: usize) -> DisjointSet {
-        let mut ancestors = Vec::with_capacity(size);
-        for i in 0..size {
-            // MakeSet(i)
-            ancestors.push(i as NodeID);
-        }
-        DisjointSet { ancestors }
-    }
-
-    fn find_set(&mut self, index: NodeID) -> NodeID {
-        let mut ret = self.ancestors[index as usize];
-        if ret != index {
-            ret = self.find_set(ret);
-            self.ancestors[index as usize] = ret;
-        }
-        ret
-    }
-
-    /// Merge two sets. Always merge `v` into `u` by assuming that `u` has higher rank.
-    /// This is not optimum but suitable for  the purpose of this code.
-    fn union(&mut self, u: NodeID, v: NodeID) {
-        if self.ancestors[u as usize] == self.ancestors[v as usize] {
-            return;
-        }
-        self.ancestors[v as usize] = u;
-    }
-}
-
 /// This is the generalized suffix tree, implemented using Ukkonen's Algorithm.
 /// One important modification to the algorithm is that this is no longer an online
 /// algorithm, i.e. it only accepts strings fully provided to the suffix tree, instead
@@ -208,7 +172,7 @@ impl GeneralizedSuffixTree {
     /// It can be trivially extended to support longest common substring among
     /// `K` strings.
     pub fn longest_common_substring_all(&self) -> String {
-        let mut disjoint_set = DisjointSet::new(self.node_storage.len());
+        let mut disjoint_set = disjoint_set::DisjointSet::new(self.node_storage.len());
 
         // prev_node stores the most recent occurance of a leaf that belongs to each string.
         let mut prev_node: Vec<NodeID> = vec![INVALID; self.str_storage.len()];
@@ -234,9 +198,24 @@ impl GeneralizedSuffixTree {
         result
     }
 
+    /// A recursive DFS that does a couple of things in one run:
+    /// - Obtain the each pair of leaves that belong to the same string and are
+    ///   consecutive in DFS visits. (stored in `prev_node`)
+    /// - Tarjan's Algorithm to compute the least common ancestor for each
+    ///   of the above pairs. (information stored in `disjoint_set`)
+    /// - Maintain the number of times an LCA lands on each node. (`lca_cnt`)
+    /// This function returns a tuple:
+    /// - Total number of leaves in the subtree.
+    /// - Sum of all LCA counts from each node in the subtree,
+    /// including the node itself.
+    /// These two numbers can be used to compute the number of unique strings
+    /// occured in the subtree, which can be used to check whether we found
+    /// a common substring.
+    /// Details of the algorithm can be found here:
+    /// https://web.cs.ucdavis.edu/~gusfield/cs224f09/commonsubstrings.pdf
     fn longest_common_substring_all_rec<'a>(
         &'a self,
-        disjoint_set: &mut DisjointSet,
+        disjoint_set: &mut disjoint_set::DisjointSet,
         prev_node: &mut Vec<NodeID>,
         lca_cnt: &mut Vec<usize>,
         node: NodeID,
@@ -256,7 +235,7 @@ impl GeneralizedSuffixTree {
                 total_leaf += 1;
                 let str_id = last_ch - ALPHABET_SIZE;
                 if prev_node[str_id] != INVALID {
-                    let lca = disjoint_set.find_set(prev_node[str_id]);
+                    let lca = disjoint_set.find_set(prev_node[str_id] as usize);
                     lca_cnt[lca as usize] += 1;
                 }
                 prev_node[str_id] = *target_node;
@@ -278,7 +257,7 @@ impl GeneralizedSuffixTree {
                 cur_str.1 -= slice.len();
             }
 
-            disjoint_set.union(node, *target_node);
+            disjoint_set.union(node as usize, *target_node as usize);
         }
         total_correction += lca_cnt[node as usize];
         let unique_str_cnt = total_leaf - total_correction;
