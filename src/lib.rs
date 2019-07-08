@@ -1,5 +1,7 @@
 mod disjoint_set;
 
+use std::collections::HashMap;
+
 type NodeID = u32;
 type StrID = u32;
 type IndexType = u32;
@@ -9,10 +11,6 @@ type CharType = u8;
 const ROOT: NodeID = 0;
 const SINK: NodeID = 1;
 const INVALID: NodeID = std::u32::MAX;
-
-const ALPHABET_SIZE: usize = 26;
-const MAX_STRING_COUNT: usize = 2;
-const MAX_CHAR_COUNT: usize = ALPHABET_SIZE + MAX_STRING_COUNT;
 
 /// This structure represents a slice to a string.
 #[derive(Debug, Clone)]
@@ -55,7 +53,7 @@ impl MappedSubstring {
 /// node represents. By doing so we avoid having an explicit edge data type.
 #[derive(Debug)]
 struct Node {
-    transitions: [NodeID; MAX_CHAR_COUNT],
+    transitions: HashMap<CharType, NodeID>,
 
     suffix_link: NodeID,
 
@@ -66,7 +64,7 @@ struct Node {
 impl Node {
     fn new(str_id: StrID, start: IndexType, end: IndexType) -> Node {
         Node {
-            transitions: [INVALID; MAX_CHAR_COUNT],
+            transitions: HashMap::new(),
             suffix_link: INVALID,
             substr: MappedSubstring::new(str_id, start, end),
         }
@@ -100,16 +98,6 @@ impl ReferencePoint {
     }
 }
 
-#[inline]
-fn encode_char(ch: CharType) -> usize {
-    (ch - 'A' as CharType) as usize
-}
-
-#[inline]
-fn decode_char(ch: usize) -> CharType {
-    ch as CharType + 'A' as CharType
-}
-
 /// This is the generalized suffix tree, implemented using Ukkonen's Algorithm.
 /// One important modification to the algorithm is that this is no longer an online
 /// algorithm, i.e. it only accepts strings fully provided to the suffix tree, instead
@@ -120,8 +108,8 @@ fn decode_char(ch: usize) -> CharType {
 /// ```
 /// use generalized_suffix_tree::GeneralizedSuffixTree;
 /// let mut tree = GeneralizedSuffixTree::new();
-/// tree.add_string(String::from("ABCDABCE"));
-/// tree.add_string(String::from("CDEFDEFG"));
+/// tree.add_string(String::from("ABCDABCE"), '$');
+/// tree.add_string(String::from("CDEFDEFG"), '#');
 /// println!("{}", tree.is_suffix("BCE"));
 /// ```
 #[derive(Debug)]
@@ -137,9 +125,6 @@ impl GeneralizedSuffixTree {
         let mut root = Node::new(0, 0, 1);
         let mut sink = Node::new(0, 0, 0);
 
-        // Allo sink to always transition to root, whichever character provided.
-        sink.transitions = [ROOT; MAX_CHAR_COUNT];
-
         root.suffix_link = SINK;
         sink.suffix_link = ROOT;
 
@@ -151,19 +136,30 @@ impl GeneralizedSuffixTree {
     }
 
     /// Add a new string to the generalized suffix tree.
-    pub fn add_string(&mut self, mut s: String) {
+    pub fn add_string(&mut self, mut s: String, term: char) {
+        self.validate_string(&s, term);
+
         let str_id = self.str_storage.len() as StrID;
-        assert!(
-            str_id < MAX_STRING_COUNT as StrID,
-            "Cannot add more than {} strings",
-            MAX_STRING_COUNT
-        );
 
         // Add a unique terminator character to the end of the string.
-        s.push(decode_char(str_id as usize + ALPHABET_SIZE) as char);
+        s.push(term);
 
         self.str_storage.push(s);
         self.process_suffixes(str_id);
+    }
+
+    fn validate_string(&self, s: &String, term: char) {
+        assert!(term.is_ascii(), "Only accept ASCII terminator");
+        assert!(
+            !s.contains(term),
+            "String should not contain terminator character"
+        );
+        for existing_str in &self.str_storage {
+            assert!(
+                !existing_str.contains(term),
+                "Any existing string should not contain terminator character"
+            );
+        }
     }
 
     /// Find the longest common substring among all strings in the suffix.
@@ -175,7 +171,8 @@ impl GeneralizedSuffixTree {
         let mut disjoint_set = disjoint_set::DisjointSet::new(self.node_storage.len());
 
         // prev_node stores the most recent occurance of a leaf that belongs to each string.
-        let mut prev_node: Vec<NodeID> = vec![INVALID; self.str_storage.len()];
+        // We use the terminator character (which uniquely represents a string) as the key.
+        let mut prev_node: HashMap<CharType, NodeID> = HashMap::new();
 
         // lca_cnt[v] means the total number of times that the lca of two nodes is node v.
         let mut lca_cnt: Vec<usize> = vec![0; self.node_storage.len()];
@@ -216,7 +213,7 @@ impl GeneralizedSuffixTree {
     fn longest_common_substring_all_rec<'a>(
         &'a self,
         disjoint_set: &mut disjoint_set::DisjointSet,
-        prev_node: &mut Vec<NodeID>,
+        prev_node: &mut HashMap<CharType, NodeID>,
         lca_cnt: &mut Vec<usize>,
         node: NodeID,
         longest_str: &mut (Vec<&'a MappedSubstring>, IndexType),
@@ -224,21 +221,20 @@ impl GeneralizedSuffixTree {
     ) -> (usize, usize) {
         let mut total_leaf = 0;
         let mut total_correction = 0;
-        for target_node in &self.get_node(node).transitions {
+        for target_node in self.get_node(node).transitions.values() {
             if *target_node == INVALID {
                 continue;
             }
             let slice = &self.get_node(*target_node).substr;
-            let last_ch = encode_char(self.get_char(slice.str_id, slice.end - 1));
-            if last_ch >= ALPHABET_SIZE {
-                // target_node is a leaf node, since the last character is terminator char.
+            if slice.end as usize == self.get_string(slice.str_id).len() {
+                // target_node is a leaf node.
                 total_leaf += 1;
-                let str_id = last_ch - ALPHABET_SIZE;
-                if prev_node[str_id] != INVALID {
-                    let lca = disjoint_set.find_set(prev_node[str_id] as usize);
+                let last_ch = self.get_char(slice.str_id, slice.end - 1);
+                if let Some(prev) = prev_node.get(&last_ch) {
+                    let lca = disjoint_set.find_set(*prev as usize);
                     lca_cnt[lca as usize] += 1;
                 }
-                prev_node[str_id] = *target_node;
+                prev_node.insert(last_ch, *target_node);
             } else {
                 cur_str.0.push(slice);
                 cur_str.1 += slice.len();
@@ -283,8 +279,7 @@ impl GeneralizedSuffixTree {
         let mut index = 0;
         let mut active_length = 0;
         while index < chars.len() {
-            let target_node_id =
-                self.get_node(node).transitions[encode_char(chars[index - active_length as usize])];
+            let target_node_id = self.transition(node, chars[index - active_length as usize]);
             if target_node_id != INVALID {
                 let slice = &self.get_node(target_node_id).substr;
                 while index != chars.len()
@@ -357,7 +352,13 @@ impl GeneralizedSuffixTree {
         self.is_suffix_or_substr(s, true)
     }
 
-    fn is_suffix_or_substr(&self, s: &str, is_substr: bool) -> bool {
+    fn is_suffix_or_substr(&self, s: &str, check_substr: bool) -> bool {
+        for existing_str in &self.str_storage {
+            assert!(
+                !s.contains(existing_str.chars().last().unwrap()),
+                "Queried string cannot contain terminator char"
+            );
+        }
         let mut node = ROOT;
         let mut index = 0;
         let chars = s.as_bytes();
@@ -369,8 +370,8 @@ impl GeneralizedSuffixTree {
             let slice = &self.get_node(target_node).substr;
             for i in slice.start..slice.end {
                 if index == s.len() {
-                    return is_substr
-                        || self.get_char(slice.str_id, i) >= decode_char(ALPHABET_SIZE);
+                    let is_suffix = i as usize == self.get_string(slice.str_id).len() - 1;
+                    return check_substr || is_suffix;
                 }
                 if chars[index] != self.get_char(slice.str_id, i) {
                     return false;
@@ -380,14 +381,18 @@ impl GeneralizedSuffixTree {
             node = target_node;
         }
         let mut is_suffix = false;
-        for ch in ALPHABET_SIZE..MAX_CHAR_COUNT {
-            if self.transition(node, decode_char(ch)) != INVALID {
+        for s in &self.str_storage {
+            // The last character of each string is a terminator. We use that
+            // to look up in the current transitions to determine if we have
+            // reached the end of any string. If needed, we are also able to
+            // return which string the queried string is a suffix of.
+            if self.transition(node, *s.as_bytes().last().unwrap()) != INVALID {
                 is_suffix = true;
                 break;
             }
         }
 
-        is_substr || is_suffix
+        check_substr || is_suffix
     }
 
     pub fn pretty_print(&self) {
@@ -395,7 +400,7 @@ impl GeneralizedSuffixTree {
     }
 
     fn print_recursive(&self, node: NodeID, space_count: u32) {
-        for target_node in &self.get_node(node).transitions {
+        for target_node in self.get_node(node).transitions.values() {
             if *target_node == INVALID {
                 continue;
             }
@@ -548,11 +553,18 @@ impl GeneralizedSuffixTree {
     }
 
     fn transition(&self, node: NodeID, ch: CharType) -> NodeID {
-        self.get_node(node).transitions[encode_char(ch)]
+        if node == SINK {
+            // SINK always transition to ROOT.
+            return ROOT;
+        }
+        match self.get_node(node).transitions.get(&ch) {
+            None => INVALID,
+            Some(x) => *x,
+        }
     }
 
     fn set_transition(&mut self, node: NodeID, ch: CharType, target_node: NodeID) {
-        self.get_node_mut(node).transitions[encode_char(ch)] = target_node;
+        self.get_node_mut(node).transitions.insert(ch, target_node);
     }
 
     fn get_char(&self, str_id: StrID, index: IndexType) -> u8 {
