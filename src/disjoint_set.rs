@@ -8,13 +8,13 @@ pub struct DisjointSet {
 }
 
 impl DisjointSet {
-    pub fn new(size: usize) -> DisjointSet {
+    pub fn new(size: usize) -> Self {
         let mut ancestors = Vec::with_capacity(size);
         for i in 0..size {
             // MakeSet(i)
             ancestors.push(i);
         }
-        DisjointSet { ancestors }
+        Self { ancestors }
     }
 
     pub fn find_set(&mut self, index: usize) -> usize {

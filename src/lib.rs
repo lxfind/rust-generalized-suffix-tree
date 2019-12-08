@@ -1,3 +1,4 @@
+//! A Generalized Suffix Tree implementation using Ukkonen's algorithm.
 mod disjoint_set;
 
 use std::collections::HashMap;
@@ -32,15 +33,15 @@ struct MappedSubstring {
 }
 
 impl MappedSubstring {
-    fn new(str_id: StrID, start: IndexType, end: IndexType) -> MappedSubstring {
-        MappedSubstring { str_id, start, end }
+    const fn new(str_id: StrID, start: IndexType, end: IndexType) -> Self {
+        Self { str_id, start, end }
     }
 
-    fn is_empty(&self) -> bool {
+    const fn is_empty(&self) -> bool {
         self.start == self.end
     }
 
-    fn len(&self) -> IndexType {
+    const fn len(&self) -> IndexType {
         self.end - self.start
     }
 }
@@ -48,7 +49,7 @@ impl MappedSubstring {
 /// This is a node in the tree. `transitions` represents all the possible
 /// transitions from this node to other nodes, indexed by the first character
 /// of the string slice that transition represents. The character needs to
-/// be encoded to an index between 0..MAX_CHAR_COUNT first.
+/// be encoded to an index between `0..MAX_CHAR_COUNT` first.
 /// `suffix_link` contains the suffix link of this node (a term used in the
 /// context of Ukkonen's algorithm).
 /// `substr` stores the slice of the string that the transition from the parent
@@ -64,8 +65,8 @@ struct Node {
 }
 
 impl Node {
-    fn new(str_id: StrID, start: IndexType, end: IndexType) -> Node {
-        Node {
+    fn new(str_id: StrID, start: IndexType, end: IndexType) -> Self {
+        Self {
             transitions: HashMap::new(),
             suffix_link: INVALID,
             substr: MappedSubstring::new(str_id, start, end),
@@ -91,8 +92,8 @@ struct ReferencePoint {
 }
 
 impl ReferencePoint {
-    fn new(node: NodeID, str_id: StrID, index: IndexType) -> ReferencePoint {
-        ReferencePoint {
+    const fn new(node: NodeID, str_id: StrID, index: IndexType) -> Self {
+        Self {
             node,
             str_id,
             index,
@@ -120,8 +121,8 @@ pub struct GeneralizedSuffixTree {
     str_storage: Vec32<String>,
 }
 
-impl GeneralizedSuffixTree {
-    pub fn new() -> GeneralizedSuffixTree {
+impl Default for GeneralizedSuffixTree {
+    fn default() -> Self {
         // Set the slice of root to be [0, 1) to allow it consume one character whenever we are transitioning from sink to root.
         // No other node will ever transition to root so this won't affect anything else.
         let mut root = Node::new(0, 0, 1);
@@ -131,10 +132,17 @@ impl GeneralizedSuffixTree {
         sink.suffix_link = ROOT;
 
         let node_storage: Vec32<Node> = vec32![root, sink];
-        GeneralizedSuffixTree {
+        Self {
             node_storage,
             str_storage: Vec32::new(),
         }
+    }
+}
+
+impl GeneralizedSuffixTree {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Add a new string to the generalized suffix tree.
@@ -170,6 +178,7 @@ impl GeneralizedSuffixTree {
     /// and would need to know the longest commmon substring.
     /// It can be trivially extended to support longest common substring among
     /// `K` strings.
+    #[must_use]
     pub fn longest_common_substring_all(&self) -> String {
         let mut disjoint_set = disjoint_set::DisjointSet::new(self.node_storage.len());
 
@@ -193,7 +202,7 @@ impl GeneralizedSuffixTree {
 
         let mut result = String::new();
         for s in longest_str.0 {
-            result.push_str(&self.get_string_slice_short(&s));
+            result.push_str(self.get_string_slice_short(s));
         }
         result
     }
@@ -212,7 +221,7 @@ impl GeneralizedSuffixTree {
     /// occured in the subtree, which can be used to check whether we found
     /// a common substring.
     /// Details of the algorithm can be found here:
-    /// https://web.cs.ucdavis.edu/~gusfield/cs224f09/commonsubstrings.pdf
+    /// <https://web.cs.ucdavis.edu/~gusfield/cs224f09/commonsubstrings.pdf>
     fn longest_common_substring_all_rec<'a>(
         &'a self,
         disjoint_set: &mut disjoint_set::DisjointSet,
@@ -271,6 +280,7 @@ impl GeneralizedSuffixTree {
 
     /// Find the longest common substring between string `s` and the current suffix.
     /// This function allows us compute this without adding `s` to the suffix.
+    #[must_use]
     pub fn longest_common_substring_with<'a>(&self, s: &'a str) -> &'a str {
         let mut longest_start: IndexType = 0;
         let mut longest_len: IndexType = 0;
@@ -345,16 +355,19 @@ impl GeneralizedSuffixTree {
     }
 
     /// Checks whether a given string `s` is a suffix in the suffix tree.
+    #[must_use]
     pub fn is_suffix(&self, s: &str) -> bool {
         self.is_suffix_or_substr(s, false)
     }
 
     /// Checks whether a given string `s` is a substring of any of the strings
     /// in the suffix tree.
+    #[must_use]
     pub fn is_substr(&self, s: &str) -> bool {
         self.is_suffix_or_substr(s, true)
     }
 
+    #[must_use]
     fn is_suffix_or_substr(&self, s: &str, check_substr: bool) -> bool {
         for existing_str in &self.str_storage {
             assert!(
@@ -552,7 +565,7 @@ impl GeneralizedSuffixTree {
     }
 
     fn get_string_slice_short(&self, slice: &MappedSubstring) -> &str {
-        &self.get_string_slice(slice.str_id, slice.start, slice.end)
+        self.get_string_slice(slice.str_id, slice.start, slice.end)
     }
 
     fn transition(&self, node: NodeID, ch: CharType) -> NodeID {
