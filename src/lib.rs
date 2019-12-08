@@ -2,6 +2,8 @@ mod disjoint_set;
 
 use std::collections::HashMap;
 
+use mediumvec::{Vec32, vec32};
+
 type NodeID = u32;
 type StrID = u32;
 type IndexType = u32;
@@ -10,7 +12,7 @@ type CharType = u8;
 // Special nodes.
 const ROOT: NodeID = 0;
 const SINK: NodeID = 1;
-const INVALID: NodeID = std::u32::MAX;
+const INVALID: NodeID = NodeID::max_value();
 
 /// This structure represents a slice to a string.
 #[derive(Debug, Clone)]
@@ -114,8 +116,8 @@ impl ReferencePoint {
 /// ```
 #[derive(Debug)]
 pub struct GeneralizedSuffixTree {
-    node_storage: Vec<Node>,
-    str_storage: Vec<String>,
+    node_storage: Vec32<Node>,
+    str_storage: Vec32<String>,
 }
 
 impl GeneralizedSuffixTree {
@@ -128,10 +130,10 @@ impl GeneralizedSuffixTree {
         root.suffix_link = SINK;
         sink.suffix_link = ROOT;
 
-        let node_storage: Vec<Node> = vec![root, sink];
+        let node_storage: Vec32<Node> = vec32![root, sink];
         GeneralizedSuffixTree {
             node_storage,
-            str_storage: vec![],
+            str_storage: Vec32::new(),
         }
     }
 
@@ -149,6 +151,7 @@ impl GeneralizedSuffixTree {
     }
 
     fn validate_string(&self, s: &str, term: char) {
+        assert!(s.len() <= IndexType::max_value() as usize);
         assert!(term.is_ascii(), "Only accept ASCII terminator");
         assert!(
             !s.contains(term),
@@ -175,10 +178,10 @@ impl GeneralizedSuffixTree {
         let mut prev_node: HashMap<CharType, NodeID> = HashMap::new();
 
         // lca_cnt[v] means the total number of times that the lca of two nodes is node v.
-        let mut lca_cnt: Vec<usize> = vec![0; self.node_storage.len()];
+        let mut lca_cnt: Vec32<usize> = vec32![0; self.node_storage.len()];
 
-        let mut longest_str: (Vec<&MappedSubstring>, IndexType) = (vec![], 0);
-        let mut cur_str: (Vec<&MappedSubstring>, IndexType) = (vec![], 0);
+        let mut longest_str: (Vec32<&MappedSubstring>, IndexType) = (Vec32::new(), 0);
+        let mut cur_str: (Vec32<&MappedSubstring>, IndexType) = (Vec32::new(), 0);
         self.longest_common_substring_all_rec(
             &mut disjoint_set,
             &mut prev_node,
@@ -214,10 +217,10 @@ impl GeneralizedSuffixTree {
         &'a self,
         disjoint_set: &mut disjoint_set::DisjointSet,
         prev_node: &mut HashMap<CharType, NodeID>,
-        lca_cnt: &mut Vec<usize>,
+        lca_cnt: &mut Vec32<usize>,
         node: NodeID,
-        longest_str: &mut (Vec<&'a MappedSubstring>, IndexType),
-        cur_str: &mut (Vec<&'a MappedSubstring>, IndexType),
+        longest_str: &mut (Vec32<&'a MappedSubstring>, IndexType),
+        cur_str: &mut (Vec32<&'a MappedSubstring>, IndexType),
     ) -> (usize, usize) {
         let mut total_leaf = 0;
         let mut total_correction = 0;
@@ -310,7 +313,7 @@ impl GeneralizedSuffixTree {
             }
             // There was a mismatch.
             cur_start += 1;
-            if cur_start > index as IndexType {
+            if cur_start as usize > index {
                 index += 1;
                 continue;
             }
@@ -326,7 +329,7 @@ impl GeneralizedSuffixTree {
                 cur_len = 0;
             }
             while active_length > 0 {
-                assert!(cur_start + cur_len < chars.len() as IndexType);
+                assert!(((cur_start + cur_len) as usize) < chars.len());
                 let target_node_id = self.transition(node, chars[(cur_start + cur_len) as usize]);
                 assert!(target_node_id != INVALID);
                 let slice = &self.get_node(target_node_id).substr;
