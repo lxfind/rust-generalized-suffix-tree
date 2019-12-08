@@ -148,7 +148,7 @@ impl GeneralizedSuffixTree {
         self.process_suffixes(str_id);
     }
 
-    fn validate_string(&self, s: &String, term: char) {
+    fn validate_string(&self, s: &str, term: char) {
         assert!(term.is_ascii(), "Only accept ASCII terminator");
         assert!(
             !s.contains(term),
@@ -268,7 +268,7 @@ impl GeneralizedSuffixTree {
 
     /// Find the longest common substring between string `s` and the current suffix.
     /// This function allows us compute this without adding `s` to the suffix.
-    pub fn longest_common_substring_with<'a>(&self, s: &'a String) -> &'a str {
+    pub fn longest_common_substring_with<'a>(&self, s: &'a str) -> &'a str {
         let mut longest_start: IndexType = 0;
         let mut longest_len: IndexType = 0;
         let mut cur_start: IndexType = 0;
@@ -540,7 +540,7 @@ impl GeneralizedSuffixTree {
         &mut self.node_storage[node_id as usize]
     }
 
-    fn get_string(&self, str_id: StrID) -> &String {
+    fn get_string(&self, str_id: StrID) -> &str {
         &self.str_storage[str_id as usize]
     }
 
