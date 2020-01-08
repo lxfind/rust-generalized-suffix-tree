@@ -175,14 +175,14 @@ impl GeneralizedSuffixTree {
 
     /// Find the longest common substring among all strings in the suffix.
     /// This function can be used when you already have a suffix tree built,
-    /// and would need to know the longest commmon substring.
+    /// and would need to know the longest common substring.
     /// It can be trivially extended to support longest common substring among
     /// `K` strings.
     #[must_use]
     pub fn longest_common_substring_all(&self) -> String {
         let mut disjoint_set = disjoint_set::DisjointSet::new(self.node_storage.len());
 
-        // prev_node stores the most recent occurance of a leaf that belongs to each string.
+        // prev_node stores the most recent occurrence of a leaf that belongs to each string.
         // We use the terminator character (which uniquely represents a string) as the key.
         let mut prev_node: HashMap<CharType, NodeID> = HashMap::new();
 
@@ -218,7 +218,7 @@ impl GeneralizedSuffixTree {
     /// - Sum of all LCA counts from each node in the subtree,
     /// including the node itself.
     /// These two numbers can be used to compute the number of unique strings
-    /// occured in the subtree, which can be used to check whether we found
+    /// occurred in the subtree, which can be used to check whether we found
     /// a common substring.
     /// Details of the algorithm can be found here:
     /// <https://web.cs.ucdavis.edu/~gusfield/cs224f09/commonsubstrings.pdf>
@@ -270,7 +270,7 @@ impl GeneralizedSuffixTree {
         total_correction += lca_cnt[node as usize];
         let unique_str_cnt = total_leaf - total_correction;
         if unique_str_cnt == self.str_storage.len() {
-            // This node represnets a substring that is common among all strings.
+            // This node represents a substring that is common among all strings.
             if cur_str.1 > longest_str.1 {
                 *longest_str = cur_str.clone();
             }
@@ -448,7 +448,7 @@ impl GeneralizedSuffixTree {
 
         let mut cur_str = cur_str.clone();
 
-        let mut oldr = ROOT;
+        let mut older = ROOT;
 
         let mut split_str = cur_str.clone();
         split_str.end -= 1;
@@ -465,18 +465,18 @@ impl GeneralizedSuffixTree {
             let leaf_node =
                 self.create_node_with_slice(active_point.str_id, cur_str.end - 1, str_len);
             self.set_transition(r, last_ch, leaf_node);
-            if oldr != ROOT {
-                self.get_node_mut(oldr).suffix_link = r;
+            if older != ROOT {
+                self.get_node_mut(older).suffix_link = r;
             }
-            oldr = r;
+            older = r;
             let suffix_link = self.get_node(active_point.node).get_suffix_link();
             active_point = self.canonize(suffix_link, &split_str);
             split_str.start = active_point.index;
             cur_str.start = active_point.index;
             is_endpoint = self.test_and_split(active_point.node, &split_str, last_ch, &mut r);
         }
-        if oldr != ROOT {
-            self.get_node_mut(oldr).suffix_link = active_point.node;
+        if older != ROOT {
+            self.get_node_mut(older).suffix_link = active_point.node;
         }
         active_point
     }
