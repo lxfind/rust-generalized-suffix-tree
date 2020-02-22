@@ -143,4 +143,15 @@ mod tests {
             assert_eq!(result1.len(), result3.len());
         }
     }
+
+    #[test]
+    fn test_longest_common_substring_all_unicode() {
+        {
+            let mut tree = generalized_suffix_tree::GeneralizedSuffixTree::new();
+            tree.add_string(String::from("我们爱在大自然"), '$');
+            tree.add_string(String::from("爱大自然里撒欢"), '#');
+            //            tree.pretty_print();
+            assert_eq!(tree.longest_common_substring_all(), "大自然");
+        }
+    }
 }

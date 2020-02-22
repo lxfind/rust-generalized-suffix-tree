@@ -2,13 +2,12 @@
 name = "generalized_suffix_tree"
 license = "MIT"
 description = "Implementation of Generalized Suffix Tree using Ukkonen's algorithm in Rust"
-version = "1.2.1"
+version = "1.2.2"
 authors = ["Xun Li <lxfind@gmail.com>"]
 edition = "2018"
 repository = "https://github.com/lxfind/rust-generalized-suffix-tree"
 
 [dependencies]
-mediumvec = "1.0.4"
 
 [dev-dependencies]
-rand = "0.7.0"
+rand = "0.7"
